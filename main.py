@@ -14,8 +14,11 @@ import os
 
 from multiprocessing import Pool
 
+import pandas as pd
+import xlwings as xw
 
-def init(req):
+
+def init():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--disable-gpu")
@@ -58,15 +61,17 @@ def init(req):
 
     chrome_options.add_experimental_option('prefs', prefs)
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    return driver
 
+def UploadData(driver ,req):
     driver.get(f'https://www.wildberries.ru/catalog/0/search.aspx?page=1&sort=popular&search={req}')
     time.sleep(3)
     test = driver.execute_script("var performance = window.performance || window.mozPerformance || window.msPerformance || window.webkitPerformance || {}; var network = performance.getEntries() || {}; return network;")
-    driver.close()
-    driver.quit()
     return test
 
+
 def searchPage(startPage, endPosition, url, articl):
+    resulll = None
     status = False
     for PageNum in range(startPage, endPosition):
         URL_LIST = url.split('&')
@@ -84,7 +89,7 @@ def searchPage(startPage, endPosition, url, articl):
             if len(d["data"]["products"]) != 0:
                 for i in range(len(d["data"]["products"])):
                     if str(articl) == str(d["data"]["products"][i]["id"]):
-                        print(f"{PageNum} страница {i+1} номер")
+                        resulll = f"{PageNum} страница {i+1} номер"
                         status = True
                         break
             else:
@@ -93,23 +98,68 @@ def searchPage(startPage, endPosition, url, articl):
             pass
         if status == True:
             break
+    return resulll
 
-
-
-if __name__ == "__main__":
-    listPAGE = init("топик в полоску")
-
-    for item in listPAGE:
+def find(art, request_1, driver):
+    for item in UploadData(driver, request_1):
         if ("https://wbxcatalog-ru.wildberries.ru" in item["name"]) and ("catalog" in item["name"]):
             url = item["name"]
             break
-            
-    #os.system('cls' if os.name=='nt' else 'clear')
-    print("Начало работы")
-    
-    art = "29035966"
     s2 = time.time()
     with Pool() as pool:
-        pool.starmap(searchPage, [(1, 25, url, art), (26, 50, url, art), (51, 75, url, art), (76, 100, url, art)])
+        RESULT = pool.starmap(searchPage, [(1, 20, url, art), (21, 40, url, art), (41, 60, url, art), (61, 80, url, art), (81, 100, url, art)])
+        pool.terminate()
         pool.close()
     print("Выполнено за %s сек" % ( round(time.time() - s2, 2) ))
+    
+    for i in RESULT:
+        num = 1
+        if i != None:
+            RESULT = i
+        if i == None:
+            num += 1
+        if num == len(RESULT):
+            RESULT = "1000 страница 1000 номер"
+            
+    return RESULT
+
+
+if __name__ == "__main__":
+    driver = init()
+#    print(find("18669322", "юбка с высокой талией", driver))
+    
+    
+    
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.max_colwidth', 20)
+    pd.options.display.expand_frame_repr = False
+    df = pd.read_excel(r'DATA.xlsx',
+                        engine='openpyxl',
+                        usecols=range(0,4),
+                        header=0,
+                        index_col='№',
+                        converters={'Заголовок колонки': pd.to_datetime})
+
+    df['Result'] = None
+
+    print("Запуск")
+    for row in df.itertuples():
+        try:
+            df.loc[row[0],'Result'] = find(row[2], row[3], driver)
+        except:
+            pass
+            
+    for row in df.itertuples():
+        try:
+            if row[4] == None:
+                df.loc[row[0],'Result'] = find(row[2], row[3], driver)
+        except:
+            df.loc[row[0],'Result'] = "ERROR"
+    driver.close()
+    
+    writer = pd.ExcelWriter('output.xlsx')
+    df.to_excel(writer)
+    writer.save()
+    print('DataFrame is written successfully to Excel File.')
+
+
