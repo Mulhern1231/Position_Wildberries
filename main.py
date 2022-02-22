@@ -17,6 +17,8 @@ from multiprocessing import Pool
 import pandas as pd
 import xlwings as xw
 
+from progress.bar import IncrementalBar
+
 
 def init():
     chrome_options = Options()
@@ -89,7 +91,7 @@ def searchPage(startPage, endPosition, url, articl):
             if len(d["data"]["products"]) != 0:
                 for i in range(len(d["data"]["products"])):
                     if str(articl) == str(d["data"]["products"][i]["id"]):
-                        resulll = f"{PageNum} страница {i+1} номер"
+                        resulll = f"{PageNum} {i+1}"
                         status = True
                         break
             else:
@@ -105,12 +107,10 @@ def find(art, request_1, driver):
         if ("https://wbxcatalog-ru.wildberries.ru" in item["name"]) and ("catalog" in item["name"]):
             url = item["name"]
             break
-    s2 = time.time()
     with Pool() as pool:
         RESULT = pool.starmap(searchPage, [(1, 20, url, art), (21, 40, url, art), (41, 60, url, art), (61, 80, url, art), (81, 100, url, art)])
         pool.terminate()
         pool.close()
-    print("Выполнено за %s сек" % ( round(time.time() - s2, 2) ))
     
     for i in RESULT:
         num = 1
@@ -119,16 +119,14 @@ def find(art, request_1, driver):
         if i == None:
             num += 1
         if num == len(RESULT):
-            RESULT = "1000 страница 1000 номер"
+            RESULT = "ERROR"
             
     return RESULT
 
 
 if __name__ == "__main__":
     driver = init()
-#    print(find("18669322", "юбка с высокой талией", driver))
-    
-    
+    os.system('cls' if os.name=='nt' else 'clear')
     
     pd.set_option('display.max_columns', None)
     pd.set_option('display.max_colwidth', 20)
@@ -140,21 +138,40 @@ if __name__ == "__main__":
                         index_col='№',
                         converters={'Заголовок колонки': pd.to_datetime})
 
-    df['Result'] = None
-
-    print("Запуск")
+    df['Страница'] = None
+    df['Позиция'] = None
+    df['Дата_проверки'] = None
+    
+    statusBAR = 0
+    for row in df.itertuples():
+        statusBAR += 1
+        
+    bar = IncrementalBar('Parsing', max = statusBAR)
+    
     for row in df.itertuples():
         try:
-            df.loc[row[0],'Result'] = find(row[2], row[3], driver)
+            resF = find(row[2], row[3], driver).split()
+            df.loc[row[0],'Страница'] = resF[0]
+            df.loc[row[0],'Позиция'] = resF[1]
+            df.loc[row[0],'Дата_проверки'] = datetime.now().date()
         except:
             pass
-            
+        bar.next()
+    bar.finish()
+    bar = IncrementalBar('Check', max = statusBAR)
     for row in df.itertuples():
         try:
             if row[4] == None:
-                df.loc[row[0],'Result'] = find(row[2], row[3], driver)
+                resF = find(row[2], row[3], driver).split()
+                df.loc[row[0],'Страница'] = resF[0]
+                df.loc[row[0],'Позиция'] = resF[1]
+                df.loc[row[0],'Дата_проверки'] = datetime.now().date()
         except:
-            df.loc[row[0],'Result'] = "ERROR"
+            df.loc[row[0],'Страница'] = "1000"
+            df.loc[row[0],'Позиция'] = "1000"
+            df.loc[row[0],'Дата_проверки'] = datetime.now().date()
+        bar.next()
+    bar.finish()
     driver.close()
     
     writer = pd.ExcelWriter('output.xlsx')
